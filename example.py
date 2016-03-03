@@ -1,7 +1,7 @@
 import sys
 import os
 
-from build.buildcalculator import MasteryPage, RunePage, ItemSet, Build
+from buildcalculator import MasteryPage, RunePage, ItemSet, Build
 from cassiopeia import riotapi
 
 

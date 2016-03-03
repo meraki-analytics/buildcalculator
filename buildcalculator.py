@@ -10,8 +10,8 @@ buildcalculator_director = os.path.dirname(os.path.realpath(__file__))
 
 patch = '6.3'
 
-_fields = json.load(open(os.path.join(buildcalculator_director, 'resources/fields.json')))
-_basic_fields = json.load(open(os.path.join(buildcalculator_director, 'resources/basic_fields.json')))
+_fields = json.load(open(os.path.join(buildcalculator_director, 'fields.json')))
+_basic_fields = json.load(open(os.path.join(buildcalculator_director, 'basic_fields.json')))
 
 
 class DefaultCounter(defaultdict, Counter):
@@ -107,7 +107,7 @@ class MasteryPage(object):
         if not all_masteries:
             riotapi_masteries = {mastery.id: mastery for mastery in riotapi.get_masteries()}
 
-            all_masteries = json.load(open(os.path.join(buildcalculator_director, 'resources/{patch}/masteries.json'.format(patch=patch))))
+            all_masteries = json.load(open(os.path.join(buildcalculator_director, 'masteries.json'.format(patch=patch))))
             all_masteries = {int(id_): data for id_, data in all_masteries.items()}
             for id_, m in all_masteries.items():
                 for key, values in m.items():
