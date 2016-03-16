@@ -1,7 +1,10 @@
 import sys
 import os
 
-from buildcalculator import MasteryPage, RunePage, ItemSet, Build
+if 'buildcalculator/buildcalculator' in os.getcwd():
+    from buildcalculator import MasteryPage, RunePage, ItemSet, Build
+else:
+    from buildcalculator.buildcalculator import MasteryPage, RunePage, ItemSet, Build
 from cassiopeia import riotapi
 
 

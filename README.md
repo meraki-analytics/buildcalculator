@@ -10,7 +10,7 @@ Mastery data is stored in `resources/patch_number/mastery.json`. If you find err
 
 ## Setup
 
-To install, clone the repository (or download the zip and unzip the contents) into a folder of your choice. Add this folder to your `PYTHONPATH` environment variable (try googling for "add new pythonpath environment variable" if you don't know how to do this).
+To install, clone the repository (or download the zip and unzip the contents) into a folder of your choice and run `python setup.py`
 
 While you add (or edit) your `PYTHONPATH`, you can also create a new environment variable called `DEV_KEY` and set it to your Riot API development key. This allows you to run `python example.py` without inputing your API key, because `example.py` will read it from your system.
 
