@@ -8,8 +8,6 @@ import cassiopeia.type.core.common
 
 buildcalculator_director = os.path.dirname(os.path.realpath(__file__))
 
-patch = '6.3'
-
 _fields = json.load(open(os.path.join(buildcalculator_director, 'fields.json')))
 _basic_fields = json.load(open(os.path.join(buildcalculator_director, 'basic_fields.json')))
 
@@ -86,6 +84,11 @@ class Item(_BuildObject):
     def __init__(self, riot_obj, dictionary=None, default=0.0):
         super().__init__(riot_obj, dictionary, default)
         self.gold = riot_obj.gold
+        self.components = riot_obj.components
+
+    @property
+    def enchanted_name(self):
+        return '{} ({})'.format(self.name, ', '.join(item.name for item in self.components))
 
 
 class MasteryPage(object):
@@ -109,7 +112,7 @@ class MasteryPage(object):
         if not all_masteries:
             riotapi_masteries = {mastery.id: mastery for mastery in riotapi.get_masteries()}
 
-            all_masteries = json.load(open(os.path.join(buildcalculator_director, 'masteries.json'.format(patch=patch))))
+            all_masteries = json.load(open(os.path.join(buildcalculator_director, 'masteries.json')))
             all_masteries = {int(id_): data for id_, data in all_masteries.items()}
             for id_, m in all_masteries.items():
                 for key, values in m.items():
@@ -248,7 +251,6 @@ class ItemSet(object):
             ItemSet._init_items(all_items)
 
         self._selected = [None for i in range(6)]
-        self._enchantments = []
         self.set(items or [])
 
 
@@ -260,53 +262,47 @@ class ItemSet(object):
         ItemSet._items_by_name = {item.name: item for _, item in ItemSet._items.items()}
 
 
-    def _parse_name(self, name):
-        if ' - ' in name:
-            name, enchantment = name.split(' - ')
-            self.enchant('Enchantment: {0}'.format(enchantment))
-        return name
-
-
     def set(self, items):
         """@param items:  A list of item IDs or item names. Defaults to an empty dictionary. Any previous data is overwritten."""
 
         if not (isinstance(items, list) or isinstance(items, ItemSet)):
             raise BuildError("'items' must be a list or an ItemSet")
 
-        self._enchantments = []
         for i, item in enumerate(items):
             if isinstance(item, str):
-                item = self._items_by_name[self._parse_name(item)]
+                if ' - ' in item:
+                    item = self.get_enchanted_item_by_name(item)
+                else:
+                    item = self._items_by_name[item]
             elif isinstance(i, int):
                 item = self._items[item]
             self._selected[i] = item
 
 
-    def enchant(self, enchantment):
+    def get_enchanted_item_by_name(self, enchanted_item_name):
         """@param enchantment:  An enchantment to add to the itemset."""
 
+        item_name, enchantment = enchanted_item_name.split(' - ')
         if isinstance(enchantment, str):
-            enchantment = self._items_by_name[self._parse_name(enchantment)]
-        elif isinstance(enchantment, int):
-            enchantment = self._items[enchantment]
-        self._enchantments.append(enchantment)
-
-
-    @property
-    def enchantments(self):
-        return self._enchantments
+            item = self._items_by_name[item_name]
+            for _, _item in self._items.items():
+                if enchantment in _item.name:
+                    if item.id in [component.id for component in _item.components]:
+                        return _item
+            else:
+                raise ValueError("Enchantment {} not found!".format(enchantment))
 
 
     @property
     def list(self):
         """Returns a list of the items."""
-        return [item for item in self._selected if item is not None] + self.enchantments
+        return [item for item in self._selected if item is not None]
 
 
     @property
     def cost(self):
         """Returns the total cost of the items."""
-        return sum(item.gold.total for item in self._selected if item is not None) + sum(enchantment.gold.total for enchantment in self.enchantments)
+        return sum(item.gold.total for item in self._selected if item is not None)
 
     def __len__(self):
         return len(self.list)

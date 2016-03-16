@@ -97,7 +97,7 @@ def main():
     print()
     print('Champion: {0}'.format(build.champion))
     print('Level: {0}'.format(build.level))
-    print('Items: {0}'.format([item.name for item in build.items]))
+    print('Items: {0}'.format([item.name if 'Enchantment' not in item.name else item.enchanted_name for item in build.items]))
     print('Runes: {0}'.format({rune.name: points for rune, points in build.runes.items()}))
     print('Masteries: {0}'.format({mastery.name: points for mastery, points in build.masteries.items()}))
     print('This build costs {0} gold.'.format(build.cost))
