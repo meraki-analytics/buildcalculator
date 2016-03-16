@@ -83,7 +83,9 @@ class Rune(_BuildObject):
 
 
 class Item(_BuildObject):
-    pass
+    def __init__(self, riot_obj, dictionary=None, default=0.0):
+        super().__init__(riot_obj, dictionary, default)
+        self.gold = riot_obj.gold
 
 
 class MasteryPage(object):
@@ -301,6 +303,11 @@ class ItemSet(object):
         return [item for item in self._selected if item is not None] + self.enchantments
 
 
+    @property
+    def cost(self):
+        """Returns the total cost of the items."""
+        return sum(item.gold.total for item in self._selected if item is not None) + sum(enchantment.gold.total for enchantment in self.enchantments)
+
     def __len__(self):
         return len(self.list)
 
@@ -340,6 +347,21 @@ class Build(object):
 
 
     def __getattr__(self, attr):  # Only called if the attr wasn't found in the usual ways. Allows for Class-like lookup of stats.
+        if 'percent_base_' in attr:
+            attr = attr.replace('percent_base_', '')
+            return self.percent_base(attr)
+        if 'percent_bonus_' in attr:
+            attr = attr.replace('percent_bonus_', '')
+            return self.percent_bonus(attr)
+        if 'percent_' in attr:
+            attr = attr.replace('percent_', '')
+            return self.percent(attr)
+        if 'bonus_' in attr:
+            attr = attr.replace('bonus_', '')
+            return self.bonus(attr)
+        if 'base_' in attr:
+            attr = attr.replace('base_', '')
+            return self.base(attr)
         if attr not in _basic_fields:
             raise AttributeError("'Build' object has no attribute '{0}'".format(attr))
 
@@ -384,6 +406,11 @@ class Build(object):
     def runes(self):
         """Returns a dictionary of (rune, num_selected) associated with this Build."""
         return self.rune_page.dictionary
+
+
+    @property
+    def cost(self):
+        return self.item_set.cost
 
 
     def _init_champions(all_champions=None):
