@@ -2,6 +2,7 @@ from collections import Counter, defaultdict
 from tabulate import tabulate
 import json
 import os
+import math
 
 from cassiopeia import riotapi
 import cassiopeia.type.core.common
@@ -65,6 +66,7 @@ class _Mastery(_BuildObject):
     # the user, based on the number of points they put in that mastery.
     def __init__(self, riot_mastery, data):
         super().__init__(riot_mastery, dictionary=data, default=DefaultCounter(float))
+        self.tree = riot_mastery.tree
 
 
 class Mastery(_Mastery):
@@ -72,6 +74,7 @@ class Mastery(_Mastery):
         self.id = mastery.id
         self.name = mastery.name
         self.points = points
+        self.tree = mastery.tree
         for attr in _fields:
             setattr(self, attr, getattr(mastery, attr)[points])
 
@@ -106,6 +109,7 @@ class MasteryPage(object):
         self._selected = defaultdict(int)
         self.update(masteries or {})
         self.list  # initializes self._iterable
+        self._check_page_viability()
 
 
     def _init_masteries(all_masteries):
@@ -121,6 +125,39 @@ class MasteryPage(object):
 
         MasteryPage._masteries = {id_: _Mastery(riotapi_masteries[id_], data) for id_, data in all_masteries.items()}
         MasteryPage._masteries_by_name = {mastery.name: mastery for _, mastery in MasteryPage._masteries.items()}
+
+
+    def _check_page_viability(self):
+        assert sum(mastery.points for mastery in self.list) <= 30
+
+        # @James, you will have to change mastery.tree.value to mastery.tree
+        # Also, self.list contains a list of the all the masteries for this mastery page
+        trees = {'Ferocity': [mastery for mastery in self.list if mastery.tree.value == 'Ferocity'],
+                 'Cunning':  [mastery for mastery in self.list if mastery.tree.value == 'Cunning'],
+                 'Resolve':  [mastery for mastery in self.list if mastery.tree.value == 'Resolve']
+                }
+
+        for tree, masteries in trees.items():
+            # Make a dictionary that will contain the total points per row
+            points = {i: 0 for i in range(1, 6+1)}
+            for mastery in masteries:
+                row = math.floor(mastery.id/10) % 10
+                column = mastery.id % 10  # not needed
+                points[row] += mastery.points
+            # Loop through the rows and make sure things are correct
+            for i in range(1, 6+1):
+                # Make sure each row has <= 5 or 1 points in it
+                if i % 2:  # odd row
+                    assert points[i] <= 5
+                else:  # even row
+                    assert points[i] <= 1
+                # If there is a point in the row, make sure all the ones before it have 5 or 1 in their rows
+                if points[i] > 0:
+                    for j in range(1, i+1):
+                        if j % 2:  # odd row
+                            assert points[j] == 5
+                        else:  # even row
+                            assert points[j] == 1
 
 
     def update(self, masteries):
@@ -250,7 +287,6 @@ class ItemSet(object):
         if not ItemSet._items:
             ItemSet._init_items(all_items)
 
-        self._selected = [None for i in range(6)]
         self.set(items or [])
 
 
@@ -262,8 +298,39 @@ class ItemSet(object):
         ItemSet._items_by_name = {item.name: item for _, item in ItemSet._items.items()}
 
 
+    def remove(self, item):
+        if isinstance(item, str):
+            if ' - ' in item:
+                item = self.get_enchanted_item_by_name(item)
+            else:
+                item = self._items_by_name[item]
+        elif isinstance(item, int):
+            item = self._items[item]
+        for index, another_item in enumerate(self._selected):
+            if another_item is not None and item == another_item:
+                break
+        self._selected[index] = None
+
+
+    def add(self, item):
+        items = self.list
+        if isinstance(item, str):
+            if ' - ' in item:
+                item = self.get_enchanted_item_by_name(item)
+            else:
+                item = self._items_by_name[item]
+        elif isinstance(item, int):
+            item = self._items[item]
+        items.append(item)
+        if len(items) > 7:
+            raise IndexError("An ItemSet can have at max 7 items (including a trinket).")
+        self.set(items)
+
+
     def set(self, items):
         """@param items:  A list of item IDs or item names. Defaults to an empty dictionary. Any previous data is overwritten."""
+
+        self._selected = [None for i in range(7)]
 
         if not (isinstance(items, list) or isinstance(items, ItemSet)):
             raise BuildError("'items' must be a list or an ItemSet")
@@ -274,7 +341,7 @@ class ItemSet(object):
                     item = self.get_enchanted_item_by_name(item)
                 else:
                     item = self._items_by_name[item]
-            elif isinstance(i, int):
+            elif isinstance(item, int):
                 item = self._items[item]
             self._selected[i] = item
 
@@ -389,7 +456,7 @@ class Build(object):
     @property
     def items(self):
         """Returns the level associated with this Build."""
-        return self.item_set.list
+        return self.item_set
 
 
     @property
