@@ -7,7 +7,7 @@ def get_participant_item_events(match, participant):
         for event in sorted(frame, key=lambda event: (event.timestamp, event.type.value)):
             if event.participant is participant and \
             (event.item is not None or event.item_after is not None or event.item_before is not None) and \
-            (event.item is None or (event.item.name != 'Health Potion' and event.item.name != 'Total Biscuit of Rejuvenation')):
+            (event.item is None or (event.item.name != 'Health Potion' and event.item.name != 'Total Biscuit of Rejuvenation' and event.item.name != 'Vision Ward' and 'Elixer' not in event.item.name)):
                 events.append(event)
     return events
 
