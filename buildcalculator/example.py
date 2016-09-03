@@ -4,7 +4,7 @@ import os
 if 'buildcalculator/buildcalculator' in os.getcwd():
     from buildcalculator import MasteryPage, RunePage, ItemSet, Build
 else:
-    from buildcalculator.buildcalculator import MasteryPage, RunePage, ItemSet, Build
+    from buildcalculator import MasteryPage, RunePage, ItemSet, Build
 from cassiopeia import riotapi
 
 
@@ -61,7 +61,7 @@ def Thresh():
     build = Build(champion=412, level=5, item_set=items, rune_page=rp, mastery_page=mp)
     return build
 
-def main():
+if __name__ == '__main__':
     riotapi.set_api_key(os.environ['DEV_KEY'])
     riotapi.print_calls(True)
     riotapi.set_region('NA')
@@ -102,6 +102,3 @@ def main():
     print('Masteries: {0}'.format({mastery.name: points for mastery, points in build.masteries.items()}))
     print('This build costs {0} gold.'.format(build.cost))
 
-
-if __name__ == '__main__':
-    main()

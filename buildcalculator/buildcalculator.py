@@ -88,27 +88,25 @@ class Item(_BuildObject):
         super().__init__(riot_obj, dictionary, default)
         self.gold = riot_obj.gold
         self.components = riot_obj.components
+        self.tags = riot_obj.tags
 
     @property
     def enchanted_name(self):
         return '{} ({})'.format(self.name, ', '.join(item.name for item in self.components))
 
 
-class MasteryPage(object):
-    _masteries = None
+class MasteryPage(defaultdict):
+    _masteries_by_id = None
     _masteries_by_name = None
 
 
     def __init__(self, masteries=None, all_masteries=None):
         """@param masteries:  A dictionary of of (mastery_id, num_points) pairs. Defaults to an empty dictionary."""
 
-        if not MasteryPage._masteries:
+        if not MasteryPage._masteries_by_id:
             MasteryPage._init_masteries(all_masteries)
-
-        # self._selected contains the number of points given to the mastery by the user
-        self._selected = defaultdict(int)
+        super().__init__(bool)
         self.update(masteries or {})
-        self.list  # initializes self._iterable
         self._check_page_viability()
 
 
@@ -122,20 +120,22 @@ class MasteryPage(object):
                 for key, values in m.items():
                     if key != 'tree' and key != 'name':
                         m[key] = {int(i): data for i, data in values.items()}
+        else:
+            MasteryPage._masteries_by_id = all_masteries
 
-        MasteryPage._masteries = {id_: _Mastery(riotapi_masteries[id_], data) for id_, data in all_masteries.items()}
-        MasteryPage._masteries_by_name = {mastery.name: mastery for _, mastery in MasteryPage._masteries.items()}
+        MasteryPage._masteries_by_id = {id_: _Mastery(riotapi_masteries[id_], data) for id_, data in all_masteries.items()}
+        MasteryPage._masteries_by_name = {mastery.name: mastery for _, mastery in MasteryPage._masteries_by_id.items()}
 
 
     def _check_page_viability(self):
-        assert sum(mastery.points for mastery in self.list) <= 30
+        if not sum(mastery.points for mastery in self.keys()) <= 30:
+            raise BuildError("A mastery page can have at most 30 points.")
 
-        # @James, you will have to change mastery.tree.value to mastery.tree
-        # Also, self.list contains a list of the all the masteries for this mastery page
-        trees = {'Ferocity': [mastery for mastery in self.list if mastery.tree.value == 'Ferocity'],
-                 'Cunning':  [mastery for mastery in self.list if mastery.tree.value == 'Cunning'],
-                 'Resolve':  [mastery for mastery in self.list if mastery.tree.value == 'Resolve']
-                }
+        trees = {
+            'Ferocity': [mastery for mastery in self.keys() if mastery.tree.value == 'Ferocity'],
+            'Cunning':  [mastery for mastery in self.keys() if mastery.tree.value == 'Cunning'],
+            'Resolve':  [mastery for mastery in self.keys() if mastery.tree.value == 'Resolve']
+        }
 
         for tree, masteries in trees.items():
             # Make a dictionary that will contain the total points per row
@@ -164,186 +164,150 @@ class MasteryPage(object):
         """@param masteries:  A dictionary of (mastery_id, num_points) or (mastery_name, num_points) pairs. Previous results are not overwritten."""
 
         if not (isinstance(masteries, dict) or isinstance(masteries, MasteryPage)):
-            raise BuildError("'masteries' must be a dictionary or a MasteryPage")
+            raise ValueError("'masteries' must be a dictionary or a MasteryPage")
 
         for m, p in masteries.items():
-            if isinstance(m, str):
-                m = MasteryPage._masteries_by_name[m]
-            elif isinstance(m, int):
-                m = MasteryPage._masteries[m]
-            self._selected[m] = p
-
-        self._refresh_data = True
+            self[Mastery(self._get_mastery(m), p)] = p
 
 
-    @property
-    def list(self):
-        """Returns a list of the selected masteries (with duplicates when multiple points have been put into a mastery)
-        parsed so that mastery.stats contains the correct stats value based on how many points the user put in that mastery.
-        """
-
-        if self._refresh_data:
-            self._iterable = [Mastery(m, p) for m, p in self._selected.items()]
-            self._refresh_data = False
-
-        return self._iterable
-
-
-    @property
-    def dictionary(self):
-        return {m: p for m, p in self._selected.items()}
-
-
-    def __len__(self):
-        return len(self._iterable)
-
-
-    def __getitem(self, key):
-        return self._iterable[key]
-
-
-    def __iter__(self):
-        return iter(self._iterable)
+    @staticmethod
+    def _get_mastery(mastery):
+        if isinstance(mastery, str):
+            mastery = MasteryPage._masteries_by_name[mastery]
+        elif isinstance(mastery, int):
+            mastery = MasteryPage._masteries_by_id[mastery]
+        return MasteryPage._masteries_by_id[mastery.id]
 
 
 
-class RunePage(object):
-    _runes = None
+class RunePage(defaultdict):
+    _runes_by_id = None
     _runes_by_name = None
 
 
     def __init__(self, runes=None, all_runes=None):
         """@param runes:  A dictionary of of (rune_id, point) or (rune_name, point) key/value pairs. Defaults to an empty dictionary."""
 
-        if not RunePage._runes:
+        if not RunePage._runes_by_id:
             RunePage._init_runes(all_runes)
-
-        self._selected = defaultdict(int)
+        super().__init__(bool)
         self.update(runes or {})
-        self.list  # initialize self._iterable
 
 
     def _init_runes(all_runes=None):
         if not all_runes:
             all_runes = {rune.id: rune for rune in riotapi.get_runes()}
-            RunePage._runes = {id_: Rune(data) for id_, data in all_runes.items()}
+            RunePage._runes_by_id = {id_: Rune(data) for id_, data in all_runes.items()}
+        else:
+            RunePage._runes_by_id = all_runes
 
-        RunePage._runes_by_name = {rune.name: rune for _, rune in RunePage._runes.items()}
+        RunePage._runes_by_name = {rune.name: rune for _, rune in RunePage._runes_by_id.items()}
 
 
     def update(self, runes):
         """@param runes:  A dictionary of (rune_id, point) or (rune_name, point) pairs."""
 
         if not (isinstance(runes, dict) or isinstance(runes, RunePage)):
-            raise BuildError("'runes' must be a dictionary or a RunePage")
+            raise ValueError("'runes' must be a dictionary or a RunePage")
 
         for r, p in runes.items():
-            if isinstance(r, str):
-                r = RunePage._runes_by_name[r]
-            elif isinstance(r, int):
-                r = RunePage._runes[r]
-            self._selected[r] = p
-
-        self._refresh_data = True
+            self[self._get_rune(r)] = p
 
 
-    @property
-    def list(self):
-        """Returns a list of the selected runes. Duplicates are included as additional items."""
-
-        if self._refresh_data:
-            self._iterable = [r for r, p in self._selected.items() for i in range(p)]
-            self._refresh_data = False
-
-        return self._iterable
-
-    @property
-    def dictionary(self):
-        """Returns a dictionary of the selected runes."""
-        return {r: p for r, p in self._selected.items()}
-
-
-    def __len__(self):
-        return len(self._iterable)
-
-
-    def __getitem(self, key):
-        return self._iterable[key]
-
-
-    def __iter__(self):
-        return iter(self._iterable)
+    @staticmethod
+    def _get_rune(rune):
+        if isinstance(rune, str):
+            rune = RunePage._runes_by_name[rune]
+        elif isinstance(rune, int):
+            rune = RunePage._runes_by_id[rune]
+        assert isinstance(rune, Rune)
+        return rune
 
 
 
-class ItemSet(object):
-    _items = None
+class ItemSet(list):
+    _items_by_id = None
     _items_by_name = None
 
 
     def __init__(self, items=None, all_items=None):
-        """@param items:  A list of item IDs or item names. Defaults to an empty dictionary."""
+        """@param items:  A list of item IDs or item names. Defaults to an empty list."""
 
-        if not ItemSet._items:
+        if not ItemSet._items_by_id:
             ItemSet._init_items(all_items)
 
-        self.set(items or [])
+        super().__init__()
+        self._trinket_index = None
+        self.overwrite(items or [])
 
 
     def _init_items(all_items=None):
         if not all_items:
             all_items = riotapi.get_items()
-            ItemSet._items = {item.id: Item(item) for item in all_items if item.maps[cassiopeia.type.core.common.Map.summoners_rift]}
+            ItemSet._items_by_id = {item.id: Item(item) for item in all_items if item.maps[cassiopeia.type.core.common.Map.summoners_rift]}
+        else:
+            ItemSet._items_by_id = all_items
 
-        ItemSet._items_by_name = {item.name: item for _, item in ItemSet._items.items()}
+        ItemSet._items_by_name = {item.name: item for _, item in ItemSet._items_by_id.items()}
+
+
+    @staticmethod
+    def _get_item(item):
+        if isinstance(item, str):
+            if ' - ' in item:
+                item = ItemSet.get_enchanted_item_by_name(item)
+            else:
+                item = ItemSet._items_by_name[item]
+        elif isinstance(item, int):
+            item = ItemSet._items_by_id[item]
+        return item
 
 
     def remove(self, item):
-        if isinstance(item, str):
-            if ' - ' in item:
-                item = self.get_enchanted_item_by_name(item)
-            else:
-                item = self._items_by_name[item]
-        elif isinstance(item, int):
-            item = self._items[item]
-        for index, another_item in enumerate(self._selected):
-            if another_item is not None and item == another_item:
-                break
-        self._selected[index] = None
+        item = self._get_item(item)
+        super().remove(item)
 
 
     def add(self, item):
-        items = self.list
-        if isinstance(item, str):
-            if ' - ' in item:
-                item = self.get_enchanted_item_by_name(item)
+        item = self._get_item(item)
+        if 'Trinket' in item.tags:
+            if self._trinket_index is not None:
+                raise BuildError("An ItemSet can have only one trinket")
             else:
-                item = self._items_by_name[item]
-        elif isinstance(item, int):
-            item = self._items[item]
-        items.append(item)
-        if len(items) > 7:
-            raise IndexError("An ItemSet can have at max 7 items (including a trinket).")
-        self.set(items)
+                super().append(item)
+                self._trinket_index = len(self) - 1
+        else:
+            has_trinket = self._trinket_index is not None
+            if len(self) > 6 + has_trinket:
+                raise BuildError("An ItemSet can have at most 6 items (plus a trinket).")
+            super().append(item)
+    append = add
 
 
-    def set(self, items):
+    def replace(self, item_before, item_after):
+        item_before = self._get_item(item_before)
+        item_after = self._get_item(item_after)
+        self.remove(item_before)
+        self.add(item_after)
+
+
+    def overwrite(self, items):
         """@param items:  A list of item IDs or item names. Defaults to an empty dictionary. Any previous data is overwritten."""
 
-        self._selected = [None for i in range(7)]
-
         if not (isinstance(items, list) or isinstance(items, ItemSet)):
-            raise BuildError("'items' must be a list or an ItemSet")
+            raise ValueError("'items' must be a list or an ItemSet")
 
-        for i, item in enumerate(items):
-            if isinstance(item, str):
-                if ' - ' in item:
-                    item = self.get_enchanted_item_by_name(item)
-                else:
-                    item = self._items_by_name[item]
-            elif isinstance(item, int):
-                item = self._items[item]
-            self._selected[i] = item
+        self.clear()
+        for item in items:
+            self.add(item)
+
+
+    @property
+    def trinket(self):
+        if self._trinket_index is None:
+            return None
+        else:
+            return self[self._trinket_index]
 
 
     def get_enchanted_item_by_name(self, enchanted_item_name):
@@ -352,7 +316,7 @@ class ItemSet(object):
         item_name, enchantment = enchanted_item_name.split(' - ')
         if isinstance(enchantment, str):
             item = self._items_by_name[item_name]
-            for _, _item in self._items.items():
+            for _, _item in self._items_by_id.items():
                 if enchantment in _item.name:
                     if item.id in [component.id for component in _item.components]:
                         return _item
@@ -361,31 +325,14 @@ class ItemSet(object):
 
 
     @property
-    def list(self):
-        """Returns a list of the items."""
-        return [item for item in self._selected if item is not None]
-
-
-    @property
     def cost(self):
         """Returns the total cost of the items."""
-        return sum(item.gold.total for item in self._selected if item is not None)
-
-    def __len__(self):
-        return len(self.list)
-
-
-    def __getitem__(self, key):
-        return self.list[key]
-
-
-    def __iter__(self):
-        return iter(self.list)
+        return sum(item.gold.total for item in self)
 
 
 
 class Build(object):
-    _champions = None
+    _champions_by_id = None
     _champions_by_name = None
 
 
@@ -397,7 +344,7 @@ class Build(object):
         @param mastery_page: The rune page or a dictionary of (mastery_id/mastery_name, num_points) pairs.
         """
 
-        if not Build._champions:
+        if not Build._champions_by_id:
             Build._init_champions()
 
         if champion is None:
@@ -449,39 +396,40 @@ class Build(object):
 
     @property
     def level(self):
-        """Returns the level associated with this Build."""
+        """Returns the level associated with this build."""
         return self._level + 1
 
 
     @property
     def items(self):
-        """Returns the level associated with this Build."""
+        """Returns the item set associated with this build."""
         return self.item_set
 
 
     @property
     def masteries(self):
-        """Returns a dictionary of (masteries, num_points) associated with this Build."""
-        return self.mastery_page.dictionary
+        """Returns the mastery page dictionary of (masteries, num_points) associated with this build."""
+        return self.mastery_page
 
 
     @property
     def runes(self):
-        """Returns a dictionary of (rune, num_selected) associated with this Build."""
-        return self.rune_page.dictionary
+        """Returns the rune page dictionary of (rune, num_selected) associated with this build."""
+        return self.rune_page
 
 
     @property
     def cost(self):
+        """Returns the total cost of the items in the build."""
         return self.item_set.cost
 
 
     def _init_champions(all_champions=None):
         if not all_champions:
             all_champions = riotapi.get_champions()
-            Build._champions = {champion.id: Champion(champion) for champion in all_champions}
+            Build._champions_by_id = {champion.id: Champion(champion) for champion in all_champions}
 
-        Build._champions_by_name = {champion.name: champion for _, champion in Build._champions.items()}
+        Build._champions_by_name = {champion.name: champion for _, champion in Build._champions_by_id.items()}
 
 
     def set_level(self, level):
@@ -501,14 +449,14 @@ class Build(object):
         if not isinstance(_champion, int):
             _champion = _champion.id
 
-        if _champion not in self._champions.keys():
+        if _champion not in self._champions_by_id.keys():
             raise BuildError('Invalid champion name, id, or Cassiopeia Champion: {0}.'.format(champion))
 
-        self._champion = self._champions[_champion]
+        self._champion = self._champions_by_id[_champion]
 
 
     def set_items(self, item_set):
-        """@param item_set:  Sets the items for the Build. Should be a list of item names, ids, or Cassiopeia Items."""
+        """@param item_set:  Sets the items for the build. Should be a list of item names, ids, or Cassiopeia Items."""
 
         if isinstance(item_set, list):
             item_set = ItemSet(item_set)
@@ -517,7 +465,7 @@ class Build(object):
 
 
     def set_masteries(self, mastery_page):
-        """@param mastery_page:  Sets the mastery page for the Build. Should be a MasteryPage or dictionary."""
+        """@param mastery_page:  Sets the mastery page for the build. Should be a MasteryPage or dictionary."""
 
         if isinstance(mastery_page, dict):
             mastery_page = MasteryPage(mastery_page)
@@ -526,7 +474,7 @@ class Build(object):
 
 
     def set_runes(self, rune_page):
-        """@param rune_page:  Sets the rune page for the Build. Should be a RunePage or dictionary."""
+        """@param rune_page:  Sets the rune page for the build. Should be a RunePage or dictionary."""
 
         if isinstance(rune_page, dict):
             rune_page = RunePage(rune_page)
@@ -541,6 +489,9 @@ class Build(object):
         return Build._grow_stat(flat, per_level, self._level)
 
 
+    @property
+    def _objects(self):
+        return self.item_set + [rune for rune, count in self.rune_page.items() for i in range(count)] + [mastery for mastery, points in self.mastery_page.items() for i in range(points)]
     def total(self, attr):
         """Returns the total value for the attribute."""
 
@@ -552,7 +503,7 @@ class Build(object):
         total_percent_base = 0.0
         total_percent_bonus = 0.0
         base = self.base(attr)
-        for obj in self.item_set.list + self.rune_page.list + self.mastery_page.list:
+        for obj in self._objects:
             flat, percent, per_level, percent_per_level, percent_base, percent_bonus = Build._get_object_stat(obj, attr)
             total_flat += flat
             total_percent += percent
@@ -575,8 +526,7 @@ class Build(object):
         """Returns the percent (not including percent-per-level) value for the attribute."""
 
         total_percent = 0.0
-        objects = self.item_set.list + self.rune_page.list + self.mastery_page.list
-        for obj in objects:
+        for obj in self._objects:
             flat, percent, per_level, percent_per_level, percent_base, percent_bonus = Build._get_object_stat(obj, attr)
             total_percent += percent
 
@@ -587,8 +537,7 @@ class Build(object):
         """Returns the percent bonus value for the attribute."""
 
         total_percent_bonus = 0.0
-        objects = self.item_set.list + self.rune_page.list + self.mastery_page.list
-        for obj in objects:
+        for obj in self._objects:
             flat, percent, per_level, percent_per_level, percent_base, percent_bonus = Build._get_object_stat(obj, attr)
             total_percent_bonus += percent_bonus
 
@@ -599,8 +548,7 @@ class Build(object):
         """Returns the percent base value for the attribute."""
 
         total_percent_base = 0.0
-        objects = self.item_set.list + self.rune_page.list + self.mastery_page.list
-        for obj in objects:
+        for obj in self._objects:
             flat, percent, per_level, percent_per_level, percent_base, percent_bonus = Build._get_object_stat(obj, attr)
             total_percent_base += percent_base
 
