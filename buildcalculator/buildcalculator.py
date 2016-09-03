@@ -491,7 +491,7 @@ class Build(object):
 
     @property
     def _objects(self):
-        return self.item_set + [rune for rune, count in self.rune_page.items() for i in range(count)] + [mastery for mastery, points in self.mastery_page.items() for i in range(points)]
+        return self.item_set + [rune for rune, count in self.rune_page.items() for i in range(count)] + [mastery for mastery, points in self.mastery_page.items()]
     def total(self, attr):
         """Returns the total value for the attribute."""
 
