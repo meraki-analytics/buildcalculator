@@ -4,8 +4,7 @@ import os
 if 'buildcalculator/buildcalculator' in os.getcwd():
     from buildcalculator import MasteryPage, RunePage, ItemSet, Build
 else:
-    from buildcalculator import MasteryPage, RunePage, ItemSet, Build
-from cassiopeia import riotapi
+    from buildcalculator.buildcalculator import MasteryPage, RunePage, ItemSet, Build
 
 
 def Jinx():
@@ -62,10 +61,6 @@ def Thresh():
     return build
 
 if __name__ == '__main__':
-    riotapi.set_api_key(os.environ['DEV_KEY'])
-    riotapi.print_calls(True)
-    riotapi.set_region('NA')
-
     try:
         champ = sys.argv[1].lower()
     except IndexError:
@@ -100,5 +95,4 @@ if __name__ == '__main__':
     print('Items: {0}'.format([item.name if 'Enchantment' not in item.name else item.enchanted_name for item in build.items]))
     print('Runes: {0}'.format({rune.name: points for rune, points in build.runes.items()}))
     print('Masteries: {0}'.format({mastery.name: points for mastery, points in build.masteries.items()}))
-    print('This build costs {0} gold.'.format(build.cost))
-
+    print('This build costs {0} gold.'.format(build.item_set.cost))

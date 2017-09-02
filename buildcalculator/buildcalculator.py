@@ -4,8 +4,9 @@ import json
 import os
 import math
 
-from cassiopeia import riotapi
-import cassiopeia.type.core.common
+from merakicommons.ghost import GhostLoadingRequiredError
+import cassiopeia as cass
+from cassiopeia.data import Map
 
 buildcalculator_director = os.path.dirname(os.path.realpath(__file__))
 
@@ -28,7 +29,11 @@ class _BuildObject(object):
 
         if hasattr(riot_obj, 'stats'):  # For masteries, which don't have stats from Riot
             for attr in _fields:
-                setattr(self, attr, getattr(riot_obj.stats, attr, default))
+                try:
+                    value = getattr(riot_obj.stats, attr, default)
+                except KeyError:
+                    value = default
+                setattr(self, attr, default)
         else:
             for attr in _fields:
                 setattr(self, attr, default)
@@ -87,18 +92,20 @@ class Item(_BuildObject):
     def __init__(self, riot_obj, dictionary=None, default=0.0):
         super().__init__(riot_obj, dictionary, default)
         self.gold = riot_obj.gold
-        self.components = riot_obj.components
+        try:
+            self.builds_from = riot_obj.builds_from
+        except GhostLoadingRequiredError:
+            self.builds_from = []
         self.tags = riot_obj.tags
 
     @property
     def enchanted_name(self):
-        return '{} ({})'.format(self.name, ', '.join(item.name for item in self.components))
+        return '{} ({})'.format(self.name, ', '.join(item.name for item in self.builds_from))
 
 
 class MasteryPage(defaultdict):
     _masteries_by_id = None
     _masteries_by_name = None
-
 
     def __init__(self, masteries=None, all_masteries=None):
         """@param masteries:  A dictionary of of (mastery_id, num_points) pairs. Defaults to an empty dictionary."""
@@ -109,10 +116,9 @@ class MasteryPage(defaultdict):
         self.update(masteries or {})
         self._check_page_viability()
 
-
     def _init_masteries(all_masteries):
         if not all_masteries:
-            riotapi_masteries = {mastery.id: mastery for mastery in riotapi.get_masteries()}
+            riotapi_masteries = {mastery.id: mastery for mastery in cass.get_masteries()}
 
             all_masteries = json.load(open(os.path.join(buildcalculator_director, 'masteries.json')))
             all_masteries = {int(id_): data for id_, data in all_masteries.items()}
@@ -125,7 +131,6 @@ class MasteryPage(defaultdict):
 
         MasteryPage._masteries_by_id = {id_: _Mastery(riotapi_masteries[id_], data) for id_, data in all_masteries.items()}
         MasteryPage._masteries_by_name = {mastery.name: mastery for _, mastery in MasteryPage._masteries_by_id.items()}
-
 
     def _check_page_viability(self):
         if not sum(mastery.points for mastery in self.keys()) <= 30:
@@ -159,16 +164,13 @@ class MasteryPage(defaultdict):
                         else:  # even row
                             assert points[j] == 1
 
-
     def update(self, masteries):
         """@param masteries:  A dictionary of (mastery_id, num_points) or (mastery_name, num_points) pairs. Previous results are not overwritten."""
-
         if not (isinstance(masteries, dict) or isinstance(masteries, MasteryPage)):
             raise ValueError("'masteries' must be a dictionary or a MasteryPage")
 
         for m, p in masteries.items():
             self[Mastery(self._get_mastery(m), p)] = p
-
 
     @staticmethod
     def _get_mastery(mastery):
@@ -179,30 +181,25 @@ class MasteryPage(defaultdict):
         return MasteryPage._masteries_by_id[mastery.id]
 
 
-
 class RunePage(defaultdict):
     _runes_by_id = None
     _runes_by_name = None
 
-
     def __init__(self, runes=None, all_runes=None):
         """@param runes:  A dictionary of of (rune_id, point) or (rune_name, point) key/value pairs. Defaults to an empty dictionary."""
-
         if not RunePage._runes_by_id:
             RunePage._init_runes(all_runes)
         super().__init__(bool)
         self.update(runes or {})
 
-
     def _init_runes(all_runes=None):
         if not all_runes:
-            all_runes = {rune.id: rune for rune in riotapi.get_runes()}
+            all_runes = {rune.id: rune for rune in cass.get_runes()}
             RunePage._runes_by_id = {id_: Rune(data) for id_, data in all_runes.items()}
         else:
             RunePage._runes_by_id = all_runes
 
         RunePage._runes_by_name = {rune.name: rune for _, rune in RunePage._runes_by_id.items()}
-
 
     def update(self, runes):
         """@param runes:  A dictionary of (rune_id, point) or (rune_name, point) pairs."""
@@ -212,7 +209,6 @@ class RunePage(defaultdict):
 
         for r, p in runes.items():
             self[self._get_rune(r)] = p
-
 
     @staticmethod
     def _get_rune(rune):
@@ -224,11 +220,9 @@ class RunePage(defaultdict):
         return rune
 
 
-
 class ItemSet(list):
     _items_by_id = None
     _items_by_name = None
-
 
     def __init__(self, items=None, all_items=None):
         """@param items:  A list of item IDs or item names. Defaults to an empty list."""
@@ -240,16 +234,14 @@ class ItemSet(list):
         self._trinket_index = None
         self.overwrite(items or [])
 
-
     def _init_items(all_items=None):
         if not all_items:
-            all_items = riotapi.get_items()
-            ItemSet._items_by_id = {item.id: Item(item) for item in all_items if item.maps[cassiopeia.type.core.common.Map.summoners_rift]}
+            all_items = cass.get_items()
+            ItemSet._items_by_id = {item.id: Item(item) for item in all_items if Map.summoners_rift in item.maps}
         else:
             ItemSet._items_by_id = all_items
 
         ItemSet._items_by_name = {item.name: item for _, item in ItemSet._items_by_id.items()}
-
 
     @staticmethod
     def _get_item(item):
@@ -262,11 +254,9 @@ class ItemSet(list):
             item = ItemSet._items_by_id[item]
         return item
 
-
     def remove(self, item):
         item = self._get_item(item)
         super().remove(item)
-
 
     def add(self, item):
         item = self._get_item(item)
@@ -283,13 +273,11 @@ class ItemSet(list):
             super().append(item)
     append = add
 
-
     def replace(self, item_before, item_after):
         item_before = self._get_item(item_before)
         item_after = self._get_item(item_after)
         self.remove(item_before)
         self.add(item_after)
-
 
     def overwrite(self, items):
         """@param items:  A list of item IDs or item names. Defaults to an empty dictionary. Any previous data is overwritten."""
@@ -301,14 +289,12 @@ class ItemSet(list):
         for item in items:
             self.add(item)
 
-
     @property
     def trinket(self):
         if self._trinket_index is None:
             return None
         else:
             return self[self._trinket_index]
-
 
     def get_enchanted_item_by_name(self, enchanted_item_name):
         """@param enchantment:  An enchantment to add to the itemset."""
@@ -318,11 +304,10 @@ class ItemSet(list):
             item = self._items_by_name[item_name]
             for _, _item in self._items_by_id.items():
                 if enchantment in _item.name:
-                    if item.id in [component.id for component in _item.components]:
+                    if item.id in [component.id for component in _item.builds_from]:
                         return _item
             else:
                 raise ValueError("Enchantment {} not found!".format(enchantment))
-
 
     @property
     def cost(self):
@@ -330,11 +315,9 @@ class ItemSet(list):
         return sum(item.gold.total for item in self)
 
 
-
 class Build(object):
     _champions_by_id = None
     _champions_by_name = None
-
 
     def __init__(self, champion=None, level=1, item_set=None, rune_page=None, mastery_page=None):
         """@param champion:     A champion ID or name.
@@ -354,7 +337,6 @@ class Build(object):
         self.set_items(item_set or [])
         self.set_runes(rune_page or {})
         self.set_masteries(mastery_page or {})
-
 
     def __getattr__(self, attr):  # Only called if the attr wasn't found in the usual ways. Allows for Class-like lookup of stats.
         if 'percent_base_' in attr:
@@ -377,13 +359,11 @@ class Build(object):
 
         return self.total(attr)
 
-
     def __getitem__(self, attr):  # Allows for dictionary-like lookup of stats.
         if attr not in _basic_fields:
             raise KeyError("'{0}'".format(attr))
 
         return self.total(attr)
-
 
     def __len__(self):  # Allows this class to be iterated over, where iterations return stat keywords
         return len(_basic_fields)
@@ -393,44 +373,37 @@ class Build(object):
         """Returns the champion associated with this Build."""
         return self._champion
 
-
     @property
     def level(self):
         """Returns the level associated with this build."""
         return self._level + 1
-
 
     @property
     def items(self):
         """Returns the item set associated with this build."""
         return self.item_set
 
-
     @property
     def masteries(self):
         """Returns the mastery page dictionary of (masteries, num_points) associated with this build."""
         return self.mastery_page
-
 
     @property
     def runes(self):
         """Returns the rune page dictionary of (rune, num_selected) associated with this build."""
         return self.rune_page
 
-
     @property
     def cost(self):
         """Returns the total cost of the items in the build."""
         return self.item_set.cost
 
-
     def _init_champions(all_champions=None):
         if not all_champions:
-            all_champions = riotapi.get_champions()
+            all_champions = cass.get_champions()
             Build._champions_by_id = {champion.id: Champion(champion) for champion in all_champions}
 
         Build._champions_by_name = {champion.name: champion for _, champion in Build._champions_by_id.items()}
-
 
     def set_level(self, level):
         """@param level:  Sets the champion's level. An int between 1 and 18 is accepted."""
@@ -438,7 +411,6 @@ class Build(object):
         if not 1 <= level <= 18:
             raise BuildError("'level' {0} must be between 1 and 18".format(level))
         self._level = level - 1
-
 
     def set_champion(self, champion):
         """@param champion:  Sets the champion for the Build. A name, id, or Cassiopeia Champion is accepted."""
@@ -454,7 +426,6 @@ class Build(object):
 
         self._champion = self._champions_by_id[_champion]
 
-
     def set_items(self, item_set):
         """@param item_set:  Sets the items for the build. Should be a list of item names, ids, or Cassiopeia Items."""
 
@@ -462,7 +433,6 @@ class Build(object):
             item_set = ItemSet(item_set)
 
         self.item_set = item_set
-
 
     def set_masteries(self, mastery_page):
         """@param mastery_page:  Sets the mastery page for the build. Should be a MasteryPage or dictionary."""
@@ -472,7 +442,6 @@ class Build(object):
 
         self.mastery_page = mastery_page
 
-
     def set_runes(self, rune_page):
         """@param rune_page:  Sets the rune page for the build. Should be a RunePage or dictionary."""
 
@@ -481,13 +450,11 @@ class Build(object):
 
         self.rune_page = rune_page
 
-
     def base(self, attr):
         """Returns the base value for the attribute."""
 
         flat, percent, per_level, percent_per_level, percent_base, percent_bonus = Build._get_object_stat(self._champion, attr)
         return Build._grow_stat(flat, per_level, self._level)
-
 
     @property
     def _objects(self):
@@ -516,15 +483,12 @@ class Build(object):
         total += total_percent_bonus * bonus
         return total
 
-
     def bonus(self, attr):
         """Returns the bonus value for the attribute."""
         return self.total(attr) - self.base(attr)
 
-
     def percent(self, attr):
         """Returns the percent (not including percent-per-level) value for the attribute."""
-
         total_percent = 0.0
         for obj in self._objects:
             flat, percent, per_level, percent_per_level, percent_base, percent_bonus = Build._get_object_stat(obj, attr)
@@ -532,10 +496,8 @@ class Build(object):
 
         return total_percent
 
-
     def percent_bonus(self, attr):
         """Returns the percent bonus value for the attribute."""
-
         total_percent_bonus = 0.0
         for obj in self._objects:
             flat, percent, per_level, percent_per_level, percent_base, percent_bonus = Build._get_object_stat(obj, attr)
@@ -543,10 +505,8 @@ class Build(object):
 
         return total_percent_bonus
 
-
     def percent_base(self, attr):
         """Returns the percent base value for the attribute."""
-
         total_percent_base = 0.0
         for obj in self._objects:
             flat, percent, per_level, percent_per_level, percent_base, percent_bonus = Build._get_object_stat(obj, attr)
@@ -554,16 +514,12 @@ class Build(object):
 
         return total_percent_base
 
-
     def _grow_stat(base, per_level, level):
         """Grow a base stat based on the level of the champion."""
-
         return base + per_level*(7./400.*(level*level-1) + 267./400.*(level-1))
-
 
     def _get_object_stats(obj):
         """Parse the obj and return (flat, percent, per_level, percent_per_level) dictionaries of all stats in _basic_fields."""
-
         flat = defaultdict(float)
         percent = defaultdict(float)
         per_level = defaultdict(float)
@@ -580,10 +536,8 @@ class Build(object):
 
         return flat, percent, per_level, percent_per_level, percent_base, percent_bonus
 
-
     def _get_object_stat(obj, key):
         """Parse the obj and return (flat, percent, per_level, percent_per_level) values (as floats) of the specified stat."""
-
         flat = getattr(obj, key, 0.0)
         percent = getattr(obj, 'percent_'+key, 0.0)
         per_level = getattr(obj, key+'_per_level', 0.0)
@@ -593,10 +547,8 @@ class Build(object):
 
         return flat, percent, per_level, percent_per_level, percent_base, percent_bonus
 
-
     def get_stats_dictionary(self):
         """Returns a dictionary of the stats in this Build instance, including bonuses and bases."""
-
         d = {}
         for key in sorted(_basic_fields):
             d[key] = round(self.total(key), 3)
@@ -605,7 +557,6 @@ class Build(object):
 
         return d
 
-
     def __str__(self):
         s = []
         for key in sorted(_basic_fields):
@@ -613,7 +564,5 @@ class Build(object):
 
         return tabulate(s, headers=['Stat', 'base', 'bonus', 'total'])
 
-
     def __repr__(self):
         return '<{0}.{1} object at {2}>'.format(self.__class__.__module__, self.__class__.__name__, hex(id(self)))
-
